@@ -391,6 +391,18 @@ public class LauncherActivity extends Activity {
                     throw new IOException("Deep scan could not find a folder containing default.xex and data/webkit/EAWebkit.xex. Select the folder that contains the extracted game files.");
                 }
                 appendLog("Deep scan found game root: " + gameRoot.getName());
+                int[] executableCount = new int[] { 0 };
+                List<String> executablePaths = new java.util.ArrayList<>();
+                scanExecutableFiles(tree, 0, "", executableCount, executablePaths);
+                appendLog("Deep scan found " + executableCount[0] +
+                    " XEX/XEXP executable or patch files.");
+                for (String executablePath : executablePaths) {
+                    appendLog("Executable scan: " + executablePath);
+                }
+                if (executableCount[0] > executablePaths.size()) {
+                    appendLog("Additional executable files omitted from log: " +
+                        (executableCount[0] - executablePaths.size()));
+                }
                 copyDocumentDirectory(gameRoot, partialDirectory);
                 verifyRetailGame(partialDirectory.toPath());
                 Files.write(partialDirectory.toPath().resolve(COMPLETE_MARKER),
@@ -427,6 +439,30 @@ public class LauncherActivity extends Activity {
             if (found != null) return found;
         }
         return null;
+    }
+
+    // Recursively inventory XEX/XEXP files for diagnostics without assuming
+    // that every executable belongs at the game root. Limit recursion depth and
+    // recorded paths so malformed providers or huge folders cannot grow memory
+    // without bound. The game root is still validated separately below.
+    private void scanExecutableFiles(DocumentFile directory, int depth, String relativePath,
+                                    int[] total, List<String> recordedPaths) throws IOException {
+        if (depth > 24 || total[0] >= 10000) return;
+        for (DocumentFile child : directory.listFiles()) {
+            if (total[0] >= 10000) return;
+            String name = child.getName();
+            if (name == null || name.isEmpty()) continue;
+            String childPath = relativePath.isEmpty() ? name : relativePath + "/" + name;
+            if (child.isFile()) {
+                String lower = name.toLowerCase(Locale.ROOT);
+                if (lower.endsWith(".xex") || lower.endsWith(".xexp")) {
+                    total[0]++;
+                    if (recordedPaths.size() < 100) recordedPaths.add(childPath);
+                }
+            } else if (child.isDirectory()) {
+                scanExecutableFiles(child, depth + 1, childPath, total, recordedPaths);
+            }
+        }
     }
 
     private void copyDocumentDirectory(DocumentFile source, File destination) throws IOException {
