@@ -4,7 +4,6 @@ name: Build Skate 3 Android 11 APK
 # time. Run this workflow manually when the game-data secrets are configured.
 on:
   workflow_dispatch:
-    inputs:
 
 permissions:
   contents: read
