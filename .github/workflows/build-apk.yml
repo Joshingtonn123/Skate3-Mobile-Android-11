@@ -16,7 +16,7 @@ concurrency:
 jobs:
   build-apk:
     # The repository's native code-generation preset is macOS ARM64-only.
-    runs-on: macos-14
+    runs-on: macos-14-xlarge
     timeout-minutes: 360
 
     steps:
