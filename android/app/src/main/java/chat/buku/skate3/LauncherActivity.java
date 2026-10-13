@@ -14,6 +14,8 @@ import android.os.Bundle;
 import android.os.ParcelFileDescriptor;
 import android.os.StatFs;
 import android.provider.OpenableColumns;
+import android.provider.DocumentsContract;
+import androidx.documentfile.provider.DocumentFile;
 import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
@@ -50,6 +52,7 @@ public class LauncherActivity extends Activity {
     private static final int REQUEST_SEIYU_MODEL = 1003;
     private static final int REQUEST_SEIYU_TEXTURE = 1004;
     private static final int REQUEST_GPU_DRIVER = 1005;
+    private static final int REQUEST_GAME_FOLDER = 1006;
     private static final long INSTALL_HEADROOM = 512L * 1024 * 1024;
     private static final long MAX_SEIYU_MODEL_SIZE = 32L * 1024 * 1024;
     private static final long MAX_SEIYU_TEXTURE_SIZE = 64L * 1024 * 1024;
@@ -287,12 +290,12 @@ public class LauncherActivity extends Activity {
 
         setLocalizedText(statusText, "ONE FILE NEEDED");
         setLocalizedText(detailText,
-            "Select your Skate 3 Xbox 360 ISO. It can be in Downloads, on an SD card, or on a connected USB drive.\n\nFree space: " +
+            "Choose your own Skate 3 Xbox 360 ISO, or select the extracted game folder. Folder mode scans nested folders for default.xex and data/webkit/EAWebkit.xex.\n\nFree space: " +
             humanBytes(new StatFs(storageRoot.getAbsolutePath()).getAvailableBytes()));
         setButton(primaryButton, "SELECT MY SKATE 3 ISO", view -> pickIso(), true);
+        setButton(secondaryButton, "SELECT EXTRACTED GAME FOLDER", view -> pickGameFolder(), false);
         hide(characterButton);
         hide(gpuDriverButton);
-        hide(secondaryButton);
         if (setupLog.isFile()) {
             setButton(tertiaryButton, "VIEW LAST SETUP LOG", view -> showLog(), false);
         } else {
@@ -310,6 +313,17 @@ public class LauncherActivity extends Activity {
             startActivityForResult(intent, REQUEST_ISO);
         } catch (ActivityNotFoundException exception) {
             showFailure("Android could not open its file picker.", exception);
+        }
+    }
+
+    private void pickGameFolder() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION |
+                        Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        try {
+            startActivityForResult(intent, REQUEST_GAME_FOLDER);
+        } catch (ActivityNotFoundException exception) {
+            showFailure("Android could not open its folder picker.", exception);
         }
     }
 
@@ -337,7 +351,14 @@ public class LauncherActivity extends Activity {
             return;
         }
         Uri uri = data.getData();
-        if (requestCode == REQUEST_ISO) {
+        if (requestCode == REQUEST_GAME_FOLDER) {
+            try {
+                getContentResolver().takePersistableUriPermission(
+                    uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            } catch (SecurityException ignored) {
+            }
+            beginFolderInstallation(uri);
+        } else if (requestCode == REQUEST_ISO) {
             try {
                 getContentResolver().takePersistableUriPermission(
                     uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
@@ -352,6 +373,82 @@ public class LauncherActivity extends Activity {
             importSeiyuTexture(uri);
         } else if (requestCode == REQUEST_GPU_DRIVER) {
             importGpuDriver(uri);
+        }
+    }
+
+    private void beginFolderInstallation(Uri treeUri) {
+        setBusy("SCANNING GAME FOLDER", "Deep-scanning for default.xex and the required WebKit file...", true);
+        worker.execute(() -> {
+            try {
+                deleteRecursively(partialDirectory);
+                Files.createDirectories(partialDirectory.toPath());
+                DocumentFile tree = DocumentFile.fromTreeUri(this, treeUri);
+                if (tree == null || !tree.isDirectory()) {
+                    throw new IOException("The selected item is not a readable folder.");
+                }
+                DocumentFile gameRoot = findGameRoot(tree, 0);
+                if (gameRoot == null) {
+                    throw new IOException("Deep scan could not find a folder containing default.xex and data/webkit/EAWebkit.xex. Select the folder that contains the extracted game files.");
+                }
+                appendLog("Deep scan found game root: " + gameRoot.getName());
+                copyDocumentDirectory(gameRoot, partialDirectory);
+                verifyRetailGame(partialDirectory.toPath());
+                Files.write(partialDirectory.toPath().resolve(COMPLETE_MARKER),
+                            "Skate 3 retail files verified\n".getBytes(StandardCharsets.UTF_8));
+                appendLog("Extracted-folder import and retail-file verification completed.");
+                installTitleUpdateOnlineAndFinalize();
+            } catch (Exception exception) {
+                try {
+                    deleteRecursively(partialDirectory);
+                } catch (IOException cleanupError) {
+                    exception.addSuppressed(cleanupError);
+                }
+                showFailure("Folder import stopped: " + cleanMessage(exception), exception);
+            }
+        });
+    }
+
+    // Searches recursively instead of assuming the ZIP's top-level folder name.
+    private DocumentFile findGameRoot(DocumentFile directory, int depth) throws IOException {
+        if (depth > 24) return null;
+        DocumentFile[] children = directory.listFiles();
+        for (DocumentFile child : children) {
+            if (!child.isFile() || !"default.xex".equalsIgnoreCase(child.getName())) continue;
+            DocumentFile parent = child.getParentFile();
+            if (parent == null) continue;
+            DocumentFile data = parent.findFile("data");
+            DocumentFile webkit = data != null && data.isDirectory() ? data.findFile("webkit") : null;
+            DocumentFile webkitXex = webkit != null && webkit.isDirectory()
+                ? webkit.findFile("EAWebkit.xex") : null;
+            if (webkitXex != null && webkitXex.isFile()) return parent;
+        }
+        for (DocumentFile child : children) {
+            if (!child.isDirectory()) continue;
+            DocumentFile found = findGameRoot(child, depth + 1);
+            if (found != null) return found;
+        }
+        return null;
+    }
+
+    private void copyDocumentDirectory(DocumentFile source, File destination) throws IOException {
+        if (!destination.exists() && !destination.mkdirs()) {
+            throw new IOException("Could not create " + destination.getAbsolutePath());
+        }
+        DocumentFile[] children = source.listFiles();
+        for (DocumentFile child : children) {
+            String name = child.getName();
+            if (name == null || name.isEmpty() || name.contains("/") || name.contains("\\\\")) {
+                continue;
+            }
+            File output = new File(destination, name);
+            if (child.isDirectory()) {
+                copyDocumentDirectory(child, output);
+            } else if (child.isFile()) {
+                try (InputStream input = getContentResolver().openInputStream(child.getUri())) {
+                    if (input == null) throw new IOException("Could not read " + name);
+                    Files.copy(input, output.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                }
+            }
         }
     }
 
