@@ -14,8 +14,9 @@ concurrency:
 
 jobs:
   build-apk:
-    # Native code generation requires an ARM64 macOS runner.
-    runs-on: macos-14
+    # GitHub-hosted macOS standard runners are Intel; the native codegen preset
+    # requires Apple Silicon. Larger-runner access may be required for this label.
+    runs-on: macos-14-xlarge
     timeout-minutes: 360
 
     steps:
@@ -104,9 +105,9 @@ jobs:
           TITLE_UPDATE_URL: ${{ secrets.SKATE3_TITLE_UPDATE_URL }}
         run: |
           set -euo pipefail
-          curl --fail --location --silent --show-error --retry 3 "$TITLE_UPDATE_URL"             --output "$RUNNER_TEMP/TU_12K2276_000000C000000.00000000000O3"
+          curl --fail --location --silent --show-error --retry 3 "$TITLE_UPDATE_URL" --output "$RUNNER_TEMP/TU_12K2276_000000C000000.00000000000O3"
           test -s "$RUNNER_TEMP/TU_12K2276_000000C000000.00000000000O3"
-          cp "$RUNNER_TEMP/TU_12K2276_000000C000000.00000000000O3"             "$GITHUB_WORKSPACE/TU_12K2276_000000C000000.00000000000O3"
+          cp "$RUNNER_TEMP/TU_12K2276_000000C000000.00000000000O3" "$GITHUB_WORKSPACE/TU_12K2276_000000C000000.00000000000O3"
 
       - name: Install native build tools
         run: |
