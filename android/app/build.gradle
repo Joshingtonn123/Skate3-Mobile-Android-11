@@ -24,8 +24,10 @@ android {
     }
     defaultConfig {
         applicationId "chat.buku.skate3"
-        minSdkVersion 33
-        targetSdkVersion 35
+        // API 30 is Android 11. Keep this branch installable on Android 11.
+        minSdkVersion 30
+        // Keep legacy permission behavior for the Android 11 compatibility branch.
+        targetSdkVersion 30
         versionCode 20100
         versionName "2.1.0"
     }

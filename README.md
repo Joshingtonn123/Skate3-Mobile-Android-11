@@ -36,7 +36,7 @@ You do not need a computer, developer tools, or an ISO extraction app.
 4. Keep the app open while it extracts and verifies the game.
 5. Tap **Play Skate 3**.
 
-Requirements: Android 13 or newer, ARM64, Vulkan, and about 8 GiB free after
+Requirements: Android 11 or newer (API 30+), ARM64, Vulkan, and about 8 GiB free after
 the ISO is already available. A multitouch controller is built in for phones.
 Physical and built-in gamepads remain supported. The first verified device is
 the Anbernic RG406V. This is experimental software, so other phones may need
@@ -126,7 +126,7 @@ problems, and performance differences between phones.
 
 ## Device requirements
 
-- Android 13 or newer
+- Android 11 or newer
 - ARM64
 - ARMv8.2 with FP16 and dot-product support
 - Vulkan support
