@@ -409,20 +409,19 @@ public class LauncherActivity extends Activity {
     }
 
     // Searches recursively instead of assuming the ZIP's top-level folder name.
+    // Check each directory from the parent side; SAF providers do not always expose parent links.
     private DocumentFile findGameRoot(DocumentFile directory, int depth) throws IOException {
         if (depth > 24) return null;
-        DocumentFile[] children = directory.listFiles();
-        for (DocumentFile child : children) {
-            if (!child.isFile() || !"default.xex".equalsIgnoreCase(child.getName())) continue;
-            DocumentFile parent = child.getParentFile();
-            if (parent == null) continue;
-            DocumentFile data = parent.findFile("data");
-            DocumentFile webkit = data != null && data.isDirectory() ? data.findFile("webkit") : null;
-            DocumentFile webkitXex = webkit != null && webkit.isDirectory()
-                ? webkit.findFile("EAWebkit.xex") : null;
-            if (webkitXex != null && webkitXex.isFile()) return parent;
+        DocumentFile defaultXex = directory.findFile("default.xex");
+        DocumentFile data = directory.findFile("data");
+        DocumentFile webkit = data != null && data.isDirectory() ? data.findFile("webkit") : null;
+        DocumentFile webkitXex = webkit != null && webkit.isDirectory()
+            ? webkit.findFile("EAWebkit.xex") : null;
+        if (defaultXex != null && defaultXex.isFile() &&
+            webkitXex != null && webkitXex.isFile()) {
+            return directory;
         }
-        for (DocumentFile child : children) {
+        for (DocumentFile child : directory.listFiles()) {
             if (!child.isDirectory()) continue;
             DocumentFile found = findGameRoot(child, depth + 1);
             if (found != null) return found;
