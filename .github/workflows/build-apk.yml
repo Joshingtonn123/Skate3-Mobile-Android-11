@@ -1,9 +1,8 @@
 name: Build Skate 3 Android 11 APK
 
+# Native recompilation requires a private, legally obtained game dump at build
+# time. Run this workflow manually when the game-data secrets are configured.
 on:
-  push:
-    branches:
-      - Android-11
   workflow_dispatch:
 
 permissions:
@@ -87,12 +86,18 @@ jobs:
             echo "::error::The ISO download is empty."
             exit 1
           fi
-          extract-xiso "$RUNNER_TEMP/skate3.iso" -d "$RUNNER_TEMP/skate3-extracted"
-          # XISO extraction tools may create a named subdirectory. Locate the
-          # expected game root without printing the private download URL.
-          game_root="$(find "$RUNNER_TEMP/skate3-extracted" -type f -name default.xex -print -quit | xargs -I{} dirname "{}")"
-          if [ -z "$game_root" ] || [ ! -f "$game_root/data/webkit/EAWebkit.xex" ]; then
-            echo "::error::The selected ISO did not contain the expected Skate 3 XEX files."
+          mkdir -p "$RUNNER_TEMP/skate3-extracted"
+          extract-xiso -x "$RUNNER_TEMP/skate3.iso" -d "$RUNNER_TEMP/skate3-extracted"
+          # Locate the game root without relying on xargs/dirname behavior
+          # when the expected executable is absent.
+          default_xex="$(find "$RUNNER_TEMP/skate3-extracted" -type f -name default.xex -print -quit)"
+          if [ -z "$default_xex" ]; then
+            echo "::error::No default.xex was found in the selected ISO."
+            exit 1
+          fi
+          game_root="$(dirname "$default_xex")"
+          if [ ! -f "$game_root/data/webkit/EAWebkit.xex" ]; then
+            echo "::error::The ISO is missing data/webkit/EAWebkit.xex."
             exit 1
           fi
           ditto "$game_root" game
