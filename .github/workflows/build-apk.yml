@@ -15,8 +15,8 @@ concurrency:
 
 jobs:
   build-apk:
-    # The repository's native code-generation preset is macOS ARM64-only.
-    runs-on: macos-14-xlarge
+    # Use a standard hosted runner to avoid requiring a paid larger-runner label.
+    runs-on: macos-14
     timeout-minutes: 360
 
     steps:
@@ -24,6 +24,14 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
+
+      - name: Verify ARM64 runner
+        run: |
+          echo "Runner architecture: $(uname -m)"
+          if [ "$(uname -m)" != "arm64" ]; then
+            echo "::error::This repository's native code-generation preset requires an ARM64 macOS runner."
+            exit 1
+          fi
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -39,6 +47,7 @@ jobs:
           sdkmanager "ndk;27.2.12479018" "cmake;3.31.6"
           echo "ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/27.2.12479018" >> "$GITHUB_ENV"
           echo "$ANDROID_SDK_ROOT/ndk/27.2.12479018" >> "$GITHUB_PATH"
+          echo "$ANDROID_SDK_ROOT/cmake/3.31.6/bin" >> "$GITHUB_PATH"
 
       - name: Verify required private game data
         run: |
