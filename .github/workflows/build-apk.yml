@@ -54,8 +54,6 @@ jobs:
           echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
 
       - name: Build native ARM64 libraries
-        env:
-          ANDROID_NDK_ROOT: ${{ env.ANDROID_NDK_ROOT }}
         run: |
           chmod +x android/tools/build_android_libs.sh
           ./android/tools/build_android_libs.sh
