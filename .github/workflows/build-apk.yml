@@ -16,7 +16,7 @@ jobs:
   build-apk:
     # GitHub-hosted macOS standard runners are Intel; the native codegen preset
     # requires Apple Silicon. Larger-runner access may be required for this label.
-    runs-on: macos-14-xlarge
+    runs-on: macos-15
     timeout-minutes: 360
 
     steps:
