@@ -5,14 +5,6 @@ name: Build Skate 3 Android 11 APK
 on:
   workflow_dispatch:
     inputs:
-      game_source:
-        description: "How to provide your own Skate 3 game files"
-        required: true
-        type: choice
-        options:
-          - iso
-          - folder_zip
-        default: folder_zip
 
 permissions:
   contents: read
@@ -65,17 +57,11 @@ jobs:
       # The URLs must point to private downloads accessible to the runner.
       - name: Check private game download secrets
         env:
-          GAME_SOURCE: ${{ inputs.game_source }}
           GAME_ISO_URL: ${{ secrets.SKATE3_GAME_ISO_URL }}
-          GAME_FOLDER_ZIP_URL: ${{ secrets.SKATE3_GAME_FOLDER_ZIP_URL }}
           TITLE_UPDATE_URL: ${{ secrets.SKATE3_TITLE_UPDATE_URL }}
         run: |
-          if [ "$GAME_SOURCE" = "iso" ] && [ -z "$GAME_ISO_URL" ]; then
-            echo "::error::Add repository secret SKATE3_GAME_ISO_URL for your own legally obtained Skate 3 Xbox 360 ISO, or select folder_zip."
-            exit 1
-          fi
-          if [ "$GAME_SOURCE" = "folder_zip" ] && [ -z "$GAME_FOLDER_ZIP_URL" ]; then
-            echo "::error::Add repository secret SKATE3_GAME_FOLDER_ZIP_URL for a private ZIP of your own extracted Skate 3 game folder, or select iso."
+          if [ -z "$GAME_ISO_URL" ]; then
+            echo "::error::Add repository secret SKATE3_GAME_ISO_URL for your own legally obtained Skate 3 Xbox 360 ISO."
             exit 1
           fi
           if [ -z "$TITLE_UPDATE_URL" ]; then
@@ -91,7 +77,6 @@ jobs:
           echo "$RUNNER_TEMP/extract-xiso/build" >> "$GITHUB_PATH"
 
       - name: Download and extract the private Skate 3 ISO
-        if: inputs.game_source == 'iso'
         env:
           GAME_ISO_URL: ${{ secrets.SKATE3_GAME_ISO_URL }}
         run: |
@@ -109,31 +94,6 @@ jobs:
           game_root="$(dirname "$default_xex")"
           if [ ! -f "$game_root/data/webkit/EAWebkit.xex" ]; then
             echo "::error::The ISO is missing data/webkit/EAWebkit.xex."
-            exit 1
-          fi
-          ditto "$game_root" game
-          test -s game/default.xex
-          test -s game/data/webkit/EAWebkit.xex
-
-      - name: Download and deep-scan the extracted game-folder ZIP
-        if: inputs.game_source == 'folder_zip'
-        env:
-          GAME_FOLDER_ZIP_URL: ${{ secrets.SKATE3_GAME_FOLDER_ZIP_URL }}
-        run: |
-          set -euo pipefail
-          mkdir -p game "$RUNNER_TEMP/skate3-folder"
-          curl --fail --location --silent --show-error --retry 3 "$GAME_FOLDER_ZIP_URL" --output "$RUNNER_TEMP/skate3-game.zip"
-          test -s "$RUNNER_TEMP/skate3-game.zip"
-          unzip -q "$RUNNER_TEMP/skate3-game.zip" -d "$RUNNER_TEMP/skate3-folder"
-          # Deep-scan nested folders; do not assume a particular ZIP top-level name.
-          default_xex="$(find "$RUNNER_TEMP/skate3-folder" -type f -name default.xex -print -quit)"
-          if [ -z "$default_xex" ]; then
-            echo "::error::No default.xex was found anywhere in the supplied ZIP."
-            exit 1
-          fi
-          game_root="$(dirname "$default_xex")"
-          if [ ! -f "$game_root/data/webkit/EAWebkit.xex" ]; then
-            echo "::error::The folder containing default.xex is missing data/webkit/EAWebkit.xex."
             exit 1
           fi
           ditto "$game_root" game
