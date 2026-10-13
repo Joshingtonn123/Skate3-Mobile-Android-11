@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   build-apk:
-    # The native code-generation preset requires an ARM64 macOS runner.
+    # Native code generation requires an ARM64 macOS runner.
     runs-on: macos-14
     timeout-minutes: 360
 
@@ -42,7 +42,6 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
-          # The old "tools" SDK package was removed and makes sdkmanager fail.
           packages: platform-tools
 
       - name: Install Android platform, build tools, NDK and CMake
@@ -54,13 +53,60 @@ jobs:
           echo "$ANDROID_SDK_ROOT/cmake/3.31.6/bin" >> "$GITHUB_PATH"
           echo "$ANDROID_SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
 
-      - name: Verify required private game data
+      # Keep game data out of Git. Configure these as repository Actions secrets.
+      # The URLs must point to private downloads accessible to the runner.
+      - name: Check private game download secrets
+        env:
+          GAME_ISO_URL: ${{ secrets.SKATE3_GAME_ISO_URL }}
+          TITLE_UPDATE_URL: ${{ secrets.SKATE3_TITLE_UPDATE_URL }}
         run: |
-          if [ ! -f game/default.xex ] || [ ! -f game/data/webkit/EAWebkit.xex ]; then
-            echo "::error::Cannot build a playable APK: required Skate 3 game data is not present."
-            echo "The game files are not included in this repository. Provide your own legally obtained game dump to the runner through a private, secure setup before building."
+          if [ -z "$GAME_ISO_URL" ]; then
+            echo "::error::Add repository secret SKATE3_GAME_ISO_URL pointing to your own legally obtained Skate 3 Xbox 360 ISO."
             exit 1
           fi
+          if [ -z "$TITLE_UPDATE_URL" ]; then
+            echo "::error::Add repository secret SKATE3_TITLE_UPDATE_URL pointing to the required Skate 3 Title Update 3 package."
+            exit 1
+          fi
+
+      - name: Install ISO extraction tool
+        run: |
+          git clone --depth 1 https://github.com/xboxdev/extract-xiso.git "$RUNNER_TEMP/extract-xiso"
+          cmake -S "$RUNNER_TEMP/extract-xiso" -B "$RUNNER_TEMP/extract-xiso/build" -DCMAKE_BUILD_TYPE=Release
+          cmake --build "$RUNNER_TEMP/extract-xiso/build" --parallel
+          echo "$RUNNER_TEMP/extract-xiso/build" >> "$GITHUB_PATH"
+
+      - name: Download and extract the private Skate 3 ISO
+        env:
+          GAME_ISO_URL: ${{ secrets.SKATE3_GAME_ISO_URL }}
+        run: |
+          set -euo pipefail
+          mkdir -p game
+          curl --fail --location --silent --show-error --retry 3 "$GAME_ISO_URL" --output "$RUNNER_TEMP/skate3.iso"
+          if [ ! -s "$RUNNER_TEMP/skate3.iso" ]; then
+            echo "::error::The ISO download is empty."
+            exit 1
+          fi
+          extract-xiso "$RUNNER_TEMP/skate3.iso" -d "$RUNNER_TEMP/skate3-extracted"
+          # XISO extraction tools may create a named subdirectory. Locate the
+          # expected game root without printing the private download URL.
+          game_root="$(find "$RUNNER_TEMP/skate3-extracted" -type f -name default.xex -print -quit | xargs -I{} dirname "{}")"
+          if [ -z "$game_root" ] || [ ! -f "$game_root/data/webkit/EAWebkit.xex" ]; then
+            echo "::error::The selected ISO did not contain the expected Skate 3 XEX files."
+            exit 1
+          fi
+          ditto "$game_root" game
+          test -s game/default.xex
+          test -s game/data/webkit/EAWebkit.xex
+
+      - name: Download Title Update 3 package
+        env:
+          TITLE_UPDATE_URL: ${{ secrets.SKATE3_TITLE_UPDATE_URL }}
+        run: |
+          set -euo pipefail
+          curl --fail --location --silent --show-error --retry 3 "$TITLE_UPDATE_URL"             --output "$RUNNER_TEMP/TU_12K2276_000000C000000.00000000000O3"
+          test -s "$RUNNER_TEMP/TU_12K2276_000000C000000.00000000000O3"
+          cp "$RUNNER_TEMP/TU_12K2276_000000C000000.00000000000O3"             "$GITHUB_WORKSPACE/TU_12K2276_000000C000000.00000000000O3"
 
       - name: Install native build tools
         run: |
@@ -68,6 +114,9 @@ jobs:
           echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
 
       - name: Build native ARM64 libraries
+        env:
+          SKATE3_GAME_DATA_ROOT: ${{ github.workspace }}/game
+          SKATE3_TITLE_UPDATE_PACKAGE: ${{ github.workspace }}/TU_12K2276_000000C000000.00000000000O3
         run: |
           chmod +x android/tools/build_android_libs.sh
           ./android/tools/build_android_libs.sh
