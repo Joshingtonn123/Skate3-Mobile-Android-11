@@ -3,6 +3,7 @@ name: Build Skate 3 Android 11 APK
 # Native recompilation requires a private, legally obtained game dump at build
 # time. Run this workflow manually when the game-data secrets are configured.
 on:
+  push:
   workflow_dispatch:
 
 permissions:
